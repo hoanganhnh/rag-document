@@ -1,0 +1,45 @@
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  UpdateDateColumn,
+  ManyToOne,
+  OneToMany,
+  JoinColumn,
+} from 'typeorm';
+import { Message } from './message.entity';
+import { Document } from './document.entity';
+
+@Entity('conversations')
+export class Conversation {
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
+
+  @Column()
+  title: string;
+
+  @Column('uuid', { nullable: true })
+  documentId: string;
+
+  @Column({ default: true })
+  isActive: boolean;
+
+  @CreateDateColumn()
+  createdAt: Date;
+
+  @UpdateDateColumn()
+  updatedAt: Date;
+
+  @ManyToOne(() => Document, (document) => document.conversations, {
+    nullable: true,
+    onDelete: 'SET NULL',
+  })
+  @JoinColumn({ name: 'documentId' })
+  document: Document;
+
+  @OneToMany(() => Message, (message) => message.conversation, {
+    cascade: true,
+  })
+  messages: Message[];
+}
