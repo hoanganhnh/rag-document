@@ -91,3 +91,42 @@ export class ConversationSummaryDto {
   lastActivity: Date;
   createdAt: Date;
 }
+
+export class QueryWithConversationDto {
+  @IsString()
+  @IsNotEmpty()
+  question: string;
+
+  @IsUUID()
+  @IsOptional()
+  conversationId?: string;
+
+  @IsUUID()
+  @IsOptional()
+  documentId?: string;
+}
+
+export class ConversationResponseDto {
+  conversationId: string;
+  documentId?: string;
+  question: string;
+  answer: string;
+  timestamp: Date;
+}
+
+export class ConversationHistoryDto {
+  id: string;
+  title: string;
+  documentId?: string;
+  document?: {
+    id: string;
+    originalName: string;
+    title?: string;
+  };
+  lastMessage?: {
+    content: string;
+    createdAt: Date;
+  };
+  createdAt: Date;
+  updatedAt: Date;
+}

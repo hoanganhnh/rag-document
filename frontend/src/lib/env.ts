@@ -8,6 +8,7 @@ import { z } from 'zod';
 
 const envVariables = z.object({
   NEXT_PUBLIC_SHOW_LOGGER: z.enum(['true', 'false']).optional(),
+  NEXT_PUBLIC_API_URL: z.string().default('http://localhost:3001'),
 });
 
 envVariables.parse(process.env);
@@ -18,3 +19,5 @@ declare global {
     interface ProcessEnv extends z.infer<typeof envVariables> {}
   }
 }
+
+export const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';

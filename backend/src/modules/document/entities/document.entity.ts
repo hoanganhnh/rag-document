@@ -4,7 +4,7 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  OneToMany,
+  OneToOne,
 } from 'typeorm';
 import { Conversation } from './conversation.entity';
 
@@ -46,6 +46,6 @@ export class Document {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @OneToMany(() => Conversation, (conversation) => conversation.document)
-  conversations: Conversation[];
+  @OneToOne(() => Conversation, (conversation) => conversation.document)
+  conversation: Conversation;
 }

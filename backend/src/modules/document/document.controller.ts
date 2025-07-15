@@ -1,9 +1,7 @@
 import {
   Body,
   Controller,
-  Get,
   Post,
-  Query,
   UploadedFile,
   UseInterceptors,
 } from '@nestjs/common';
@@ -12,8 +10,12 @@ import { diskStorage } from 'multer';
 import * as path from 'path';
 
 import { DocumentService } from './document.service';
+import {
+  ConversationResponseDto,
+  QueryWithConversationDto,
+} from './dtos/query.dto';
 
-@Controller('document')
+@Controller('documents')
 export class DocumentController {
   constructor(private readonly documentService: DocumentService) {}
 
@@ -35,8 +37,14 @@ export class DocumentController {
     return this.documentService.uploadFile(file);
   }
 
-  @Get('/query')
-  async handleQuery(@Query('q') question: string) {
-    return await this.documentService.query(question);
+  @Post('query')
+  async queryDocument(
+    @Body() queryDto: QueryWithConversationDto,
+  ): Promise<ConversationResponseDto> {
+    return this.documentService.queryWithConversation(
+      queryDto.question,
+      queryDto.conversationId,
+      queryDto.documentId,
+    );
   }
 }

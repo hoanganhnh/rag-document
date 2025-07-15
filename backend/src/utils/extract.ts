@@ -1,6 +1,6 @@
-import fs from 'fs';
-import pdf from 'pdf-parse';
-import Tesseract from 'tesseract.js';
+import * as fs from 'fs';
+import * as pdf from 'pdf-parse';
+import * as Tesseract from 'tesseract.js';
 import { parse } from 'csv-parse/sync';
 
 export async function extractText(
@@ -10,13 +10,12 @@ export async function extractText(
   const buffer = fs.readFileSync(filePath);
 
   if (mimetype === 'application/pdf') {
-    const pdfParser = pdf as (buffer: Buffer) => Promise<{ text: string }>;
-    const data = await pdfParser(buffer);
+    const data = await pdf(buffer); // 📄 PDF
     return data.text;
   }
 
   if (mimetype === 'text/plain') {
-    return buffer.toString('utf8');
+    return buffer.toString('utf8'); // 📜 TXT
   }
 
   if (mimetype === 'text/csv') {

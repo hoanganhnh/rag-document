@@ -1,7 +1,6 @@
 import { Module } from '@nestjs/common';
 import { DatabaseModule } from './database/database.module';
 import { DocumentModule } from './modules/document/document.module';
-import { SearchModule } from './modules/search/search.module';
 import { ConfigModule } from '@nestjs/config';
 
 @Module({
@@ -11,7 +10,6 @@ import { ConfigModule } from '@nestjs/config';
       envFilePath: '.env',
     }),
     DocumentModule,
-    SearchModule,
     DatabaseModule,
   ],
   controllers: [],

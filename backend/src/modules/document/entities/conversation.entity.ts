@@ -4,9 +4,9 @@ import {
   Column,
   CreateDateColumn,
   UpdateDateColumn,
-  ManyToOne,
   OneToMany,
   JoinColumn,
+  OneToOne,
 } from 'typeorm';
 import { Message } from './message.entity';
 import { Document } from './document.entity';
@@ -31,7 +31,7 @@ export class Conversation {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  @ManyToOne(() => Document, (document) => document.conversations, {
+  @OneToOne(() => Document, (document) => document.conversation, {
     nullable: true,
     onDelete: 'SET NULL',
   })

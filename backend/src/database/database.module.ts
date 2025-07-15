@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ConfigModule, ConfigService } from '@nestjs/config';
-import { Document, Message, Conversation } from '../modules/search/entities';
+import { Document, Message, Conversation } from 'src/modules/document/entities';
 
 @Module({
   imports: [
@@ -14,9 +14,9 @@ import { Document, Message, Conversation } from '../modules/search/entities';
         username: configService.get('DATABASE_USERNAME', 'postgres'),
         password: configService.get('DATABASE_PASSWORD', 'password'),
         database: configService.get('DATABASE_NAME', 'document_ai'),
-        entities: [Document, Message, Conversation],
         synchronize: configService.get('NODE_ENV') !== 'production',
-        logging: configService.get('NODE_ENV') === 'development',
+        entities: [Document, Message, Conversation],
+        // logging: configService.get('NODE_ENV') === 'development',
         ssl:
           configService.get('DATABASE_SSL') === 'true'
             ? { rejectUnauthorized: false }

@@ -5,6 +5,7 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
+  OneToMany,
   JoinColumn,
 } from 'typeorm';
 import { Conversation } from './conversation.entity';
@@ -43,4 +44,18 @@ export class Message {
   })
   @JoinColumn({ name: 'conversationId' })
   conversation: Conversation;
+
+  // Parent-child relationship for Q&A pairs
+  @ManyToOne(() => Message, (message) => message.children, {
+    nullable: true,
+    onDelete: 'CASCADE',
+  })
+  @JoinColumn({ name: 'parentId' })
+  parent?: Message;
+
+  @OneToMany(() => Message, (message) => message.parent)
+  children: Message[];
+
+  @Column('uuid', { nullable: true })
+  parentId?: string;
 }
