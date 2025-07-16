@@ -119,15 +119,30 @@ export class DocumentService {
     raw: string,
   ): Promise<StructuredDocument> {
     const STRUCTURE_PROMPT = PromptTemplate.fromTemplate(`
-      You are given a raw document content. Extract and return JSON with this schema:
+      You are a document analysis assistant. Analyze the following document content and extract information to create a structured JSON response.
+
+      Please analyze the document and create a JSON object with this exact schema:
       {{
-        "title": string,
-        "summary": string,
-        "keywords": string[],
-        "sections": [[{{heading}}: string, {{content}}: string]]
+        "title": "extracted or inferred document title",
+        "summary": "concise summary of the document content",
+        "keywords": ["relevant", "keywords", "from", "content"],
+        "sections": [
+          {{
+            "heading": "section title or topic",
+            "content": "section content summary"
+          }}
+        ]
       }}
-      
-      Raw document:
+
+      Instructions:
+      - Extract or infer a meaningful title from the document
+      - Create a concise summary of the main content
+      - Identify 3-8 relevant keywords
+      - Break the content into logical sections with headings and content
+      - If no clear sections exist, create at least one section with "Main Content" as heading
+      - Return ONLY the JSON object, no additional text
+
+      Document content to analyze:
       """
       {document}
       """
@@ -137,7 +152,51 @@ export class DocumentService {
 
     const resp = await chain.invoke({ document: raw });
 
-    return JSON.parse(resp.text) as StructuredDocument;
+    try {
+      // Extract JSON from response text
+      let jsonText = resp.content as string;
+
+      // Remove markdown code blocks if present
+      const jsonMatch = jsonText.match(/```(?:json)?\s*(\{[\s\S]*\})\s*```/);
+      if (jsonMatch) {
+        jsonText = jsonMatch[1];
+      }
+
+      // Try to find JSON object in the response
+      const jsonStart = jsonText.indexOf('{');
+      const jsonEnd = jsonText.lastIndexOf('}');
+
+      if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+        jsonText = jsonText.substring(jsonStart, jsonEnd + 1);
+      }
+
+      const parsed = JSON.parse(jsonText);
+
+      // Validate the structure
+      if (!parsed.title || !parsed.summary || !Array.isArray(parsed.keywords)) {
+        throw new Error('Invalid JSON structure');
+      }
+
+      // Ensure sections exist and have proper structure
+      if (!Array.isArray(parsed.sections)) {
+        parsed.sections = [
+          { heading: 'Main Content', content: raw.slice(0, 1000) },
+        ];
+      }
+
+      return parsed as StructuredDocument;
+    } catch (error) {
+      console.error('Failed to parse structured document:', error);
+      console.error('Response text:', resp.content);
+
+      // Return a fallback structure
+      return {
+        title: 'Untitled Document',
+        summary: 'Unable to generate summary',
+        keywords: [],
+        sections: [{ heading: 'Content', content: raw.slice(0, 1000) }],
+      };
+    }
   }
 
   private async createDocumentConversation(
