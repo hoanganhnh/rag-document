@@ -267,7 +267,7 @@ export class DocumentService {
           }
 
           Previous conversation:
-          ${conversationHistory}
+          {conversationHistory}
 
           Answer the current question based on the provided context and previous conversation.`,
         ],
@@ -281,7 +281,11 @@ export class DocumentService {
         async (input: { question: string }) => {
           const docs = await retriever.invoke(input.question);
           const context = docs.map((doc) => doc.pageContent).join('\n\n');
-          return { question: input.question, context };
+          return {
+            question: input.question,
+            context,
+            conversationHistory,
+          };
         },
         prompt,
         this.openai,
