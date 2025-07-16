@@ -1,98 +1,152 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+# Backend
 
-## Description
+## API Endpoints
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+### Documents API
 
-## Project setup
+#### 1. Get All Documents with Search
+**GET** `/documents`
 
+Retrieve all documents with their associated conversations and optional keyword search.
+
+**Query Parameters:**
+- `keyword` (optional): Search term to filter documents by name, title, summary, content, or keywords
+- `sortBy` (optional): Sort field - `createdAt`, `updatedAt`, `title`, or `originalName` (default: `createdAt`)
+- `sortOrder` (optional): Sort direction - `ASC` or `DESC` (default: `DESC`)
+
+**Example Requests:**
 ```bash
-$ yarn install
+# Get all documents
+GET /documents
+
+# Search documents by keyword
+GET /documents?keyword=contract
+
+# Search and sort by title ascending
+GET /documents?keyword=legal&sortBy=title&sortOrder=ASC
+
+# Sort by creation date descending
+GET /documents?sortBy=createdAt&sortOrder=DESC
 ```
 
-## Compile and run the project
-
-```bash
-# development
-$ yarn run start
-
-# watch mode
-$ yarn run start:dev
-
-# production mode
-$ yarn run start:prod
+**Response Format:**
+```json
+{
+  "documents": [
+    {
+      "id": "uuid",
+      "filename": "document-123456789.pdf",
+      "originalName": "contract.pdf",
+      "mimeType": "application/pdf",
+      "title": "Service Agreement",
+      "summary": "Legal contract for services...",
+      "keywords": ["legal", "contract", "services"],
+      "extractedText": "This agreement outlines...",
+      "createdAt": "2024-01-01T00:00:00Z",
+      "updatedAt": "2024-01-01T00:00:00Z",
+      "conversation": {
+        "id": "uuid",
+        "title": "Q&A for contract.pdf",
+        "messageCount": 5,
+        "createdAt": "2024-01-01T00:00:00Z",
+        "updatedAt": "2024-01-01T01:00:00Z"
+      }
+    }
+  ],
+  "total": 1,
+  "searchKeyword": "contract"
+}
 ```
 
-## Run tests
+#### 2. Upload Document
+**POST** `/documents/upload`
 
-```bash
-# unit tests
-$ yarn run test
+Upload a new document for processing and analysis.
 
-# e2e tests
-$ yarn run test:e2e
+#### 3. Query Document
+**POST** `/documents/query`
 
-# test coverage
-$ yarn run test:cov
+Ask questions about documents using conversational AI.
+
+#### 4. Get Conversation Messages
+**GET** `/documents/conversations/:conversationId/messages`
+
+Retrieve all messages in a conversation grouped by question-answer pairs.
+
+**Path Parameters:**
+- `conversationId`: UUID of the conversation
+
+**Response Format:**
+```json
+{
+  "conversationId": "uuid",
+  "title": "Q&A for document.pdf",
+  "documentId": "uuid",
+  "document": {
+    "id": "uuid",
+    "originalName": "document.pdf",
+    "title": "Document Title"
+  },
+  "messageCount": 5,
+  "systemMessages": [
+    {
+      "id": "uuid",
+      "role": "system",
+      "content": "Document uploaded...",
+      "createdAt": "2024-01-01T00:00:00Z",
+      "updatedAt": "2024-01-01T00:00:00Z",
+      "parentId": null
+    }
+  ],
+  "questionAnswerPairs": [
+    {
+      "question": {
+        "id": "uuid",
+        "role": "user",
+        "content": "What is this document about?",
+        "createdAt": "2024-01-01T00:01:00Z",
+        "updatedAt": "2024-01-01T00:01:00Z",
+        "parentId": null
+      },
+      "answer": {
+        "id": "uuid",
+        "role": "assistant",
+        "content": "This document is about...",
+        "createdAt": "2024-01-01T00:01:05Z",
+        "updatedAt": "2024-01-01T00:01:05Z",
+        "parentId": "question-uuid"
+      },
+      "createdAt": "2024-01-01T00:01:00Z"
+    }
+  ],
+  "createdAt": "2024-01-01T00:00:00Z",
+  "updatedAt": "2024-01-01T00:01:05Z"
+}
 ```
 
-## Deployment
+## Search Functionality
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+The search functionality allows filtering documents by:
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+1. **Original filename** - Case-insensitive partial match
+2. **Document title** - Case-insensitive partial match  
+3. **Summary** - Case-insensitive partial match
+4. **Extracted text content** - Case-insensitive partial match
+5. **Keywords** - Case-insensitive partial match against any keyword
 
-```bash
-$ yarn install -g @nestjs/mau
-$ mau deploy
-```
+### Search Examples:
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+- Search for legal documents: `?keyword=legal`
+- Search for contracts: `?keyword=contract` 
+- Search for specific company: `?keyword=acme%20corp`
+- Combined search and sort: `?keyword=invoice&sortBy=createdAt&sortOrder=DESC`
 
-## Resources
+## Response Features
 
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- **Truncated content**: Long text fields are truncated with "..." for better API performance
+- **Message counts**: Each conversation includes total message count
+- **Last message preview**: Shows the most recent non-system message (up to 100 characters)
+- **Comprehensive metadata**: Includes all document metadata (title, summary, keywords, etc.)
+- **Conversation linking**: Documents are linked to their associated conversations when available

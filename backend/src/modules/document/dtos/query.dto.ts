@@ -130,3 +130,79 @@ export class ConversationHistoryDto {
   createdAt: Date;
   updatedAt: Date;
 }
+
+export class MessageDto {
+  id: string;
+  role: MessageRole;
+  content: string;
+  createdAt: Date;
+  updatedAt: Date;
+  parentId?: string;
+}
+
+export class QuestionAnswerPairDto {
+  question: MessageDto;
+  answer?: MessageDto;
+  createdAt: Date;
+}
+
+export class ConversationMessagesResponseDto {
+  conversationId: string;
+  title: string;
+  documentId?: string;
+  document?: {
+    id: string;
+    originalName: string;
+    title?: string;
+  };
+  messageCount: number;
+  systemMessages: MessageDto[];
+  questionAnswerPairs: QuestionAnswerPairDto[];
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export class DocumentSearchQueryDto {
+  @IsString()
+  @IsOptional()
+  keyword?: string;
+
+  @IsString()
+  @IsOptional()
+  sortBy?: 'createdAt' | 'updatedAt' | 'title' | 'originalName';
+
+  @IsString()
+  @IsOptional()
+  sortOrder?: 'ASC' | 'DESC';
+}
+
+export class DocumentWithConversationDto {
+  id: string;
+  filename: string;
+  originalName: string;
+  mimeType: string;
+  title?: string;
+  summary?: string;
+  keywords: string[];
+  extractedText?: string;
+  createdAt: Date;
+  updatedAt: Date;
+  conversation?: {
+    id: string;
+    title: string;
+    messageCount: number;
+    lastMessage?: {
+      content: string;
+      role: MessageRole;
+      createdAt: Date;
+    };
+    createdAt: Date;
+    updatedAt: Date;
+  } | null;
+}
+
+export class DocumentsListResponseDto {
+  documents: DocumentWithConversationDto[];
+  total: number;
+  searchKeyword?: string;
+}
