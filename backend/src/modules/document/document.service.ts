@@ -2,22 +2,29 @@ import { HttpException, HttpStatus, Injectable } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import * as path from 'path';
-import * as fs from 'fs';
 
+import { PromptTemplate } from '@langchain/core/prompts';
 import { ChatOpenAI, OpenAIEmbeddings } from '@langchain/openai';
 import { PineconeService } from './pipecone.service';
 import { RunnableSequence } from '@langchain/core/runnables';
 import { ChatPromptTemplate } from '@langchain/core/prompts';
 import { PineconeStore } from '@langchain/pinecone';
 import { extractText } from 'src/utils/extract';
-import { structureText } from 'src/utils/structure';
 import { UploadedFile } from 'src/types/file.type';
 import { ConfigService } from '@nestjs/config';
 import { Document, Conversation, Message, MessageRole } from './entities';
 
+export interface StructuredDocument {
+  title: string;
+  summary: string;
+  keywords: string[];
+  sections: Array<{ heading: string; content: string }>;
+}
+
 @Injectable()
 export class DocumentService {
   private openaiApiKey: string;
+  private openai: ChatOpenAI;
 
   constructor(
     @InjectRepository(Document)
@@ -34,6 +41,12 @@ export class DocumentService {
     if (!this.openaiApiKey) {
       throw new Error('OPENAI_API_KEY is not set');
     }
+
+    this.openai = new ChatOpenAI({
+      openAIApiKey: this.openaiApiKey,
+      modelName: 'gpt-4',
+      temperature: 0.7,
+    });
   }
 
   async uploadFile(file: UploadedFile) {
@@ -41,7 +54,7 @@ export class DocumentService {
       const filePath = path.resolve(file.path);
       const rawText = await extractText(filePath, file.mimetype);
 
-      const structured = await structureText(rawText);
+      const structured = await this.structureTextFromDocument(rawText);
 
       const embedding = new OpenAIEmbeddings({
         openAIApiKey: this.openaiApiKey,
@@ -83,10 +96,7 @@ export class DocumentService {
 
       const savedDocument = await this.documentRepository.save(document);
 
-      // Create initial conversation for the document
       const conversation = await this.createDocumentConversation(savedDocument);
-
-      fs.unlinkSync(filePath);
 
       return {
         status: 'uploaded',
@@ -103,6 +113,31 @@ export class DocumentService {
         HttpStatus.INTERNAL_SERVER_ERROR,
       );
     }
+  }
+
+  private async structureTextFromDocument(
+    raw: string,
+  ): Promise<StructuredDocument> {
+    const STRUCTURE_PROMPT = PromptTemplate.fromTemplate(`
+      You are given a raw document content. Extract and return JSON with this schema:
+      {{
+        "title": string,
+        "summary": string,
+        "keywords": string[],
+        "sections": [[{{heading}}: string, {{content}}: string]]
+      }}
+      
+      Raw document:
+      """
+      {document}
+      """
+    `);
+
+    const chain = RunnableSequence.from([STRUCTURE_PROMPT, this.openai]);
+
+    const resp = await chain.invoke({ document: raw });
+
+    return JSON.parse(resp.text) as StructuredDocument;
   }
 
   private async createDocumentConversation(
@@ -210,12 +245,6 @@ export class DocumentService {
         retriever = vectorStore.asRetriever();
       }
 
-      const model = new ChatOpenAI({
-        modelName: 'gpt-4',
-        openAIApiKey: this.openaiApiKey,
-        temperature: 0.7,
-      });
-
       const conversationHistory = previousMessages
         .filter((msg) => msg.role !== MessageRole.SYSTEM)
         .map((msg) => `${msg.role.toUpperCase()}: ${msg.content}`)
@@ -255,7 +284,7 @@ export class DocumentService {
           return { question: input.question, context };
         },
         prompt,
-        model,
+        this.openai,
       ]);
 
       const result = await chain.invoke({ question });
