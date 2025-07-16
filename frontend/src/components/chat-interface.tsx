@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Search, Settings, User, Bot, Upload, FileText, Calendar } from "lucide-react"
+import { Search, Settings, User, Bot, Upload, FileText, Calendar, Zap, ZapOff } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -21,6 +21,8 @@ import { ChatMessage } from "@/components/ui/chat-message"
 import { MessageInput } from "@/components/ui/message-input"
 import { apiService, type Document, type ConversationMessagesResponse, type QueryResponse } from "@/services/api"
 import { TypingIndicator } from "@/components/ui/typing-indicator"
+import { useStreamingQuery } from "@/hooks/use-streaming-query"
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip"
 
 interface DisplayMessage {
   id: string;
@@ -64,7 +66,7 @@ function DocumentSidebar({
   }
 
   const formatDate = (date: Date) => {
-    return new Intl.DateTimeFormat('en-US', {
+    return new Intl.DateTimeFormat('vi-VN', {
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
@@ -198,7 +200,9 @@ function MainContent({
   const [files, setFiles] = useState<File[] | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
+  const [streamingEnabled, setStreamingEnabled] = useState(true)
   const router = useRouter()
+  const { streamingResponse, isStreaming, error: streamingError, startStreaming, resetStream } = useStreamingQuery()
 
   useEffect(() => {
     if (activeConversationId) {
@@ -259,10 +263,11 @@ function MainContent({
       return
     }
 
+    const questionText = input
     const userMessage: DisplayMessage = {
       id: Date.now().toString(),
       role: "user",
-      content: input,
+      content: questionText,
       createdAt: new Date(),
       experimental_attachments: files?.map(file => ({
         name: file.name,
@@ -274,49 +279,109 @@ function MainContent({
     setMessages(prev => [...prev, userMessage])
     setInput("")
     setFiles(null)
-    setIsGenerating(true)
 
-    try {
-      const response: QueryResponse = await apiService.queryDocument(
-        input,
-        activeConversationId || undefined,
-        activeDocument.id
-      )
-
-      const assistantMessage: DisplayMessage = {
-        id: (Date.now() + 1).toString(),
+    if (streamingEnabled) {
+      // Add a placeholder message for streaming
+      const streamingMessageId = (Date.now() + 1).toString()
+      const streamingMessage: DisplayMessage = {
+        id: streamingMessageId,
         role: "assistant",
-        content: response.answer,
-        createdAt: new Date(response.timestamp),
-      }
-
-      setMessages(prev => [...prev, assistantMessage])
-
-      if (!activeConversationId && response.conversationId) {
-        router.push(`?conversationId=${response.conversationId}`, { scroll: true })
-        
-        window.dispatchEvent(new CustomEvent('conversationCreated', { 
-          detail: { conversationId: response.conversationId } 
-        }))
-      }
-    } catch (error) {
-      console.error('Failed to send message:', error)
-      
-      const errorMessage: DisplayMessage = {
-        id: (Date.now() + 1).toString(),
-        role: "assistant",
-        content: "Sorry, I encountered an error while processing your message. Please try again.",
+        content: "",
         createdAt: new Date(),
       }
-      setMessages(prev => [...prev, errorMessage])
-    } finally {
-      setIsGenerating(false)
+      setMessages(prev => [...prev, streamingMessage])
+
+      try {
+        resetStream()
+        await startStreaming(
+          questionText,
+          activeConversationId || undefined,
+          activeDocument.id
+        )
+
+        // The useEffect will handle updating the message content
+        // No need to manually update here as it creates race conditions
+
+        // Handle conversation creation for new documents
+        if (!activeConversationId) {
+          // Reload documents to get the new conversation
+          window.dispatchEvent(new CustomEvent('conversationCreated', { 
+            detail: { documentId: activeDocument.id } 
+          }))
+        }
+      } catch (error) {
+        console.error('Failed to stream message:', error)
+        
+        setMessages(prev => prev.map(msg => 
+          msg.id === streamingMessageId 
+            ? { ...msg, content: "Sorry, I encountered an error while processing your message. Please try again." }
+            : msg
+        ))
+      }
+    } else {
+      // Use regular non-streaming query
+      setIsGenerating(true)
+
+      try {
+        const response: QueryResponse = await apiService.queryDocument(
+          questionText,
+          activeConversationId || undefined,
+          activeDocument.id
+        )
+
+        const assistantMessage: DisplayMessage = {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: response.answer,
+          createdAt: new Date(response.timestamp),
+        }
+
+        setMessages(prev => [...prev, assistantMessage])
+
+        if (!activeConversationId && response.conversationId) {
+          router.push(`?conversationId=${response.conversationId}`, { scroll: true })
+          
+          window.dispatchEvent(new CustomEvent('conversationCreated', { 
+            detail: { conversationId: response.conversationId } 
+          }))
+        }
+      } catch (error) {
+        console.error('Failed to send message:', error)
+        
+        const errorMessage: DisplayMessage = {
+          id: (Date.now() + 1).toString(),
+          role: "assistant",
+          content: "Sorry, I encountered an error while processing your message. Please try again.",
+          createdAt: new Date(),
+        }
+        setMessages(prev => [...prev, errorMessage])
+      } finally {
+        setIsGenerating(false)
+      }
     }
   }
 
   const stopGeneration = () => {
     setIsGenerating(false)
+    // Note: Streaming cannot be stopped once started with current implementation
   }
+
+  // Update streaming message in real-time AND preserve final content
+  useEffect(() => {
+    if (streamingResponse) {
+      setMessages(prev => {
+        const lastMessage = prev[prev.length - 1]
+        if (lastMessage && lastMessage.role === 'assistant') {
+          return prev.map((msg, index) => 
+            index === prev.length - 1 
+              ? { ...msg, content: streamingResponse }
+              : msg
+          )
+        }
+        return prev
+      })
+    }
+  }, [streamingResponse]) // Remove isStreaming dependency
 
   return (
     <SidebarInset className="bg-black">
@@ -340,13 +405,41 @@ function MainContent({
             )}
           </div>
 
-          <Button
-            variant="ghost"
-            size="icon"
-            className="text-gray-400 hover:text-white hover:bg-gray-800 p-2 rounded-md transition-colors"
-          >
-            <Settings className="h-4 w-4 md:h-5 md:w-5" />
-          </Button>
+          <div className="flex items-center gap-2">
+            <TooltipProvider>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    onClick={() => setStreamingEnabled(!streamingEnabled)}
+                    className={`p-2 rounded-md transition-colors ${
+                      streamingEnabled 
+                        ? 'text-blue-400 hover:text-blue-300 hover:bg-blue-900/20' 
+                        : 'text-gray-400 hover:text-white hover:bg-gray-800'
+                    }`}
+                  >
+                    {streamingEnabled ? (
+                      <Zap className="h-4 w-4 md:h-5 md:w-5" />
+                    ) : (
+                      <ZapOff className="h-4 w-4 md:h-5 md:w-5" />
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  <p>{streamingEnabled ? 'Streaming Enabled' : 'Streaming Disabled'}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
+
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-gray-400 hover:text-white hover:bg-gray-800 p-2 rounded-md transition-colors"
+            >
+              <Settings className="h-4 w-4 md:h-5 md:w-5" />
+            </Button>
+          </div>
         </div>
 
         {/* Chat Messages */}
@@ -431,7 +524,12 @@ function MainContent({
                 <div className="flex-shrink-0 w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center">
                   <Bot className="h-4 w-4 text-gray-300" />
                 </div>
-                <TypingIndicator />
+                <div className="flex items-center gap-2">
+                  <TypingIndicator />
+                  {isStreaming && (
+                    <span className="text-xs text-blue-400">Streaming...</span>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -448,7 +546,7 @@ function MainContent({
                   ? `Ask about ${activeDocument.title || activeDocument.originalName}...` 
                   : "Select a document to start chatting..."}
                 allowAttachments={false}
-                isGenerating={isGenerating}
+                isGenerating={isStreaming || isGenerating}
                 stop={stopGeneration}
                 enableInterrupt={true}
                 disabled={!activeDocument}

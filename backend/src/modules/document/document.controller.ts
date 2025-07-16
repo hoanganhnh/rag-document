@@ -8,7 +8,9 @@ import {
   Param,
   ParseUUIDPipe,
   Query,
+  Res,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
 import * as path from 'path';
@@ -65,6 +67,37 @@ export class DocumentController {
       queryDto.conversationId,
       queryDto.documentId,
     );
+  }
+
+  @Post('query/stream')
+  async queryDocumentStream(
+    @Body() queryDto: QueryWithConversationDto,
+    @Res() res: Response,
+  ): Promise<void> {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.setHeader('Access-Control-Allow-Origin', '*');
+    res.setHeader('Access-Control-Allow-Headers', 'Cache-Control');
+
+    try {
+      const stream = this.documentService.queryWithConversationStream(
+        queryDto.question,
+        queryDto.conversationId,
+        queryDto.documentId,
+      );
+
+      for await (const chunk of stream) {
+        const data = JSON.stringify({ content: chunk });
+        res.write(`data: ${data}\n\n`);
+      }
+
+      res.write('data: [DONE]\n\n');
+      res.end();
+    } catch (error) {
+      res.write(`data: ${JSON.stringify({ error: error.message })}\n\n`);
+      res.end();
+    }
   }
 
   /**

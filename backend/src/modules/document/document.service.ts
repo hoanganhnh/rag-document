@@ -315,6 +315,110 @@ export class DocumentService {
     }
   }
 
+  async *queryWithConversationStream(
+    question: string,
+    conversationId?: string,
+    documentId?: string,
+  ): AsyncGenerator<string, void, unknown> {
+    try {
+      // Simplified version for debugging
+      let conversation: Conversation | null;
+
+      if (conversationId) {
+        conversation = await this.conversationRepository.findOne({
+          where: { id: conversationId, isActive: true },
+          relations: ['document'],
+        });
+
+        if (!conversation) {
+          throw new HttpException(
+            'Conversation not found',
+            HttpStatus.NOT_FOUND,
+          );
+        }
+      } else if (documentId) {
+        conversation = await this.conversationRepository.findOne({
+          where: { documentId, isActive: true },
+          relations: ['document'],
+        });
+
+        if (!conversation) {
+          const document = await this.documentRepository.findOne({
+            where: { id: documentId, isActive: true },
+          });
+
+          if (!document) {
+            throw new HttpException('Document not found', HttpStatus.NOT_FOUND);
+          }
+
+          conversation = await this.createDocumentConversation(document);
+        }
+      } else {
+        throw new HttpException(
+          'Either conversationId or documentId must be provided',
+          HttpStatus.BAD_REQUEST,
+        );
+      }
+
+      const questionMessage = await this.messageRepository.save(
+        this.messageRepository.create({
+          conversationId: conversation.id,
+          role: MessageRole.USER,
+          content: question,
+        }),
+      );
+
+      // Create a simple streaming model without retrieval for testing
+      const streamingModel = new ChatOpenAI({
+        openAIApiKey: this.openaiApiKey,
+        modelName: 'gpt-4',
+        temperature: 0.7,
+        streaming: true,
+      });
+
+      // Simple prompt without variables for testing
+      const simplePrompt = ChatPromptTemplate.fromMessages([
+        ['system', 'You are a helpful assistant.'],
+        ['human', '{input}'],
+      ]);
+
+      // Simple chain
+      const chain = RunnableSequence.from([simplePrompt, streamingModel]);
+
+      let fullAnswer = '';
+
+      // Stream the response
+      const stream = await chain.stream({ input: question });
+
+      for await (const chunk of stream) {
+        const content = chunk.content as string;
+        if (content) {
+          fullAnswer += content;
+          yield content;
+        }
+      }
+
+      // Save the complete answer to the database
+      await this.messageRepository.save(
+        this.messageRepository.create({
+          conversationId: conversation.id,
+          role: MessageRole.ASSISTANT,
+          content: fullAnswer,
+          parentId: questionMessage.id,
+        }),
+      );
+
+      conversation.updatedAt = new Date();
+      await this.conversationRepository.save(conversation);
+    } catch (error) {
+      console.error('Stream query error:', error);
+      throw new HttpException(
+        'Stream query failed',
+        HttpStatus.INTERNAL_SERVER_ERROR,
+      );
+    }
+  }
+
   async getConversationMessages(conversationId: string) {
     try {
       const conversation = await this.conversationRepository.findOne({
