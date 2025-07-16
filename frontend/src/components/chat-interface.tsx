@@ -1,7 +1,8 @@
 "use client"
 
 import { useState, useEffect, useRef } from "react"
-import { Search, Plus, Settings, User, Bot, Upload } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Search, Settings, User, Bot, Upload, FileText, Calendar } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -16,30 +17,43 @@ import {
 } from "@/components/ui/sidebar"
 import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { ChatMessage, type Message } from "@/components/ui/chat-message"
+import { ChatMessage } from "@/components/ui/chat-message"
 import { MessageInput } from "@/components/ui/message-input"
-import { apiService, type Conversation, type QuestionResponse } from "@/services/api"
+import { apiService, type Document, type ConversationMessagesResponse, type QueryResponse } from "@/services/api"
+import { TypingIndicator } from "@/components/ui/typing-indicator"
 
-function ChatSidebar({ 
-  conversations, 
+interface DisplayMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  createdAt: Date;
+  experimental_attachments?: Array<{
+    name: string;
+    contentType: string;
+    url: string;
+  }>;
+}
+
+function DocumentSidebar({ 
+  documents, 
   activeConversationId, 
-  setActiveConversationId, 
-  onNewChat, 
+  onDocumentClick,
   onUploadDocument, 
   isLoading 
 }: {
-  conversations: Conversation[]
+  documents: Document[]
   activeConversationId: string | null
-  setActiveConversationId: (id: string | null) => void
-  onNewChat: () => void
+  onDocumentClick: (document: Document) => void
   onUploadDocument: (file: File) => void
   isLoading: boolean
 }) {
   const [searchTerm, setSearchTerm] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const filteredConversations = conversations.filter(conv =>
-    conv.title.toLowerCase().includes(searchTerm.toLowerCase())
+  const filteredDocuments = documents.filter(doc =>
+    doc.originalName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    doc.title?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+    doc.keywords.some(keyword => keyword.toLowerCase().includes(searchTerm.toLowerCase()))
   )
 
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -49,19 +63,18 @@ function ChatSidebar({
     }
   }
 
+  const formatDate = (date: Date) => {
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(date)
+  }
+
   return (
     <Sidebar className="bg-gray-900 border-gray-700">
       <SidebarHeader className="p-4 border-b border-gray-700 bg-gray-900">
-        <Button
-          onClick={onNewChat}
-          disabled={isLoading}
-          className="w-full mb-2 bg-gray-800 hover:bg-gray-700 text-white border border-gray-600 items-center justify-center gap-2"
-          variant="outline"
-        >
-          <Plus className="h-4 w-4" />
-          New chat
-        </Button>
-
         <Button
           onClick={() => fileInputRef.current?.click()}
           disabled={isLoading}
@@ -75,7 +88,7 @@ function ChatSidebar({
         <input
           ref={fileInputRef}
           type="file"
-          accept=".pdf,.doc,.docx,.txt"
+          accept=".pdf,.doc,.docx,.txt,.csv"
           onChange={handleFileUpload}
           className="hidden"
         />
@@ -83,42 +96,84 @@ function ChatSidebar({
         <div className="relative">
           <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
           <SidebarInput
-            placeholder="Search chats"
+            placeholder="Search documents"
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="pl-10 bg-gray-800 border-gray-600 text-white placeholder-gray-400 focus:ring-gray-500"
           />
         </div>
       </SidebarHeader>
+      
       <SidebarContent className="bg-gray-900">
         <ScrollArea className="flex-1">
           <SidebarMenu className="p-2">
             {isLoading ? (
-              <div className="p-4 text-gray-400 text-center">Loading conversations...</div>
-            ) : filteredConversations.length === 0 ? (
+              <div className="p-4 text-gray-400 text-center">Loading documents...</div>
+            ) : filteredDocuments.length === 0 ? (
               <div className="p-4 text-gray-400 text-center">
-                {searchTerm ? 'No conversations found' : 'No conversations yet'}
+                {searchTerm ? 'No documents found' : 'No documents yet. Upload one to get started!'}
               </div>
             ) : (
-              filteredConversations.map((conversation) => (
-                <SidebarMenuItem key={conversation.id}>
+              filteredDocuments.map((document) => (
+                <SidebarMenuItem key={document.id}>
                   <SidebarMenuButton
-                    onClick={() => setActiveConversationId(conversation.id)}
-                    isActive={activeConversationId === conversation.id}
-                    className="w-full justify-start text-left text-gray-300 hover:bg-gray-800 hover:text-white data-[active=true]:bg-gray-700 data-[active=true]:text-white rounded-md p-2 transition-colors"
+                    onClick={() => onDocumentClick(document)}
+                    isActive={activeConversationId === document.conversation?.id}
+                    size="lg"
+                    className="w-full justify-start text-left text-gray-300 hover:bg-gray-800 hover:text-white data-[active=true]:bg-gray-700 data-[active=true]:text-white rounded-md transition-colors min-h-[auto] h-auto p-3"
                   >
-                    <div className="flex flex-col items-start w-full">
-                      <span className="truncate text-sm font-medium">{conversation.title}</span>
-                      {conversation.lastMessage && (
-                        <span className="truncate text-xs text-gray-500 mt-1">
-                          {conversation.lastMessage}
-                        </span>
-                      )}
-                      {conversation.documentTitle && (
-                        <span className="truncate text-xs text-blue-400 mt-1">
-                          📄 {conversation.documentTitle}
-                        </span>
-                      )}
+                    <div className="flex items-start gap-2 w-full min-w-0">
+                      <FileText className="h-4 w-4 text-blue-400 flex-shrink-0 mt-0.5" />
+                      
+                      <div className="flex flex-col min-w-0 flex-1 space-y-1">
+                        {/* Document title */}
+                        <div className="font-medium text-sm truncate">
+                          {document.title || document.originalName}
+                        </div>
+                        
+                          {/* Summary */}
+                         {document.summary && (
+                           <div className="text-xs text-gray-500 leading-tight overflow-hidden max-h-8">
+                             {document.summary.slice(0, 80)}
+                             {document.summary.length > 80 && "..."}
+                           </div>
+                         )}
+                        
+                        {/* Date and message count */}
+                        <div className="flex items-center justify-between text-xs text-gray-500">
+                          <div className="flex items-center gap-1">
+                            <Calendar className="h-3 w-3" />
+                            <span className="truncate">
+                              {formatDate(new Date(document.createdAt))}
+                            </span>
+                          </div>
+                          
+                          {document.conversation && (
+                            <span className="text-green-400 whitespace-nowrap ml-2">
+                              {document.conversation.messageCount} msgs
+                            </span>
+                          )}
+                        </div>
+                        
+                        {/* Keywords */}
+                        {document.keywords.length > 0 && (
+                          <div className="flex flex-wrap gap-1">
+                            {document.keywords.slice(0, 2).map((keyword, index) => (
+                              <span 
+                                key={index}
+                                className="text-xs bg-gray-700 text-gray-300 px-1.5 py-0.5 rounded truncate max-w-[80px]"
+                              >
+                                {keyword}
+                              </span>
+                            ))}
+                            {document.keywords.length > 2 && (
+                              <span className="text-xs text-gray-500">
+                                +{document.keywords.length - 2}
+                              </span>
+                            )}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -132,21 +187,18 @@ function ChatSidebar({
 }
 
 function MainContent({ 
+  activeDocument,
   activeConversationId, 
-  conversations, 
-  onNewChat 
 }: {
+  activeDocument: Document | null
   activeConversationId: string | null
-  conversations: Conversation[]
-  onNewChat: () => void
 }) {
-  const [messages, setMessages] = useState<Message[]>([])
+  const [messages, setMessages] = useState<DisplayMessage[]>([])
   const [input, setInput] = useState("")
   const [files, setFiles] = useState<File[] | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [isLoadingMessages, setIsLoadingMessages] = useState(false)
-
-  const activeConversation = conversations.find(c => c.id === activeConversationId)
+  const router = useRouter()
 
   useEffect(() => {
     if (activeConversationId) {
@@ -159,8 +211,39 @@ function MainContent({
   const loadConversationMessages = async (conversationId: string) => {
     setIsLoadingMessages(true)
     try {
-      const messages = await apiService.getConversationMessages(conversationId)
-      setMessages(messages)
+      const response: ConversationMessagesResponse = await apiService.getConversationMessages(conversationId)
+      
+      const displayMessages: DisplayMessage[] = []
+      
+      response.systemMessages.forEach(msg => {
+        displayMessages.push({
+          id: msg.id,
+          role: msg.role,
+          content: msg.content,
+          createdAt: new Date(msg.createdAt),
+        })
+      })
+      
+      response.questionAnswerPairs.forEach(pair => {
+        displayMessages.push({
+          id: pair.question.id,
+          role: pair.question.role,
+          content: pair.question.content,
+          createdAt: new Date(pair.question.createdAt),
+        })
+        
+        if (pair.answer) {
+          displayMessages.push({
+            id: pair.answer.id,
+            role: pair.answer.role,
+            content: pair.answer.content,
+            createdAt: new Date(pair.answer.createdAt),
+          })
+        }
+      })
+      
+      displayMessages.sort((a, b) => a.createdAt.getTime() - b.createdAt.getTime())
+      setMessages(displayMessages)
     } catch (error) {
       console.error('Failed to load messages:', error)
     } finally {
@@ -171,8 +254,12 @@ function MainContent({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!input.trim() && (!files || files.length === 0)) return
+    if (!activeDocument) {
+      alert('Please select a document first')
+      return
+    }
 
-    const userMessage: Message = {
+    const userMessage: DisplayMessage = {
       id: Date.now().toString(),
       role: "user",
       content: input,
@@ -190,34 +277,32 @@ function MainContent({
     setIsGenerating(true)
 
     try {
-      let conversationTitle = input.slice(0, 50) + (input.length > 50 ? '...' : '')
-      
-      const response: QuestionResponse = await apiService.askQuestion(
+      const response: QueryResponse = await apiService.queryDocument(
         input,
         activeConversationId || undefined,
-        activeConversation?.documentId,
-        !activeConversationId ? conversationTitle : undefined
+        activeDocument.id
       )
 
-      const assistantMessage: Message = {
+      const assistantMessage: DisplayMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
         content: response.answer,
-        createdAt: new Date(),
+        createdAt: new Date(response.timestamp),
       }
 
       setMessages(prev => [...prev, assistantMessage])
 
-      // If this was a new conversation, reload conversations to get the new one
-      if (!activeConversationId) {
-        // The parent component should handle reloading conversations
-        // and setting the active conversation to the new one
-        window.location.reload() // Temporary solution
+      if (!activeConversationId && response.conversationId) {
+        router.push(`?conversationId=${response.conversationId}`, { scroll: true })
+        
+        window.dispatchEvent(new CustomEvent('conversationCreated', { 
+          detail: { conversationId: response.conversationId } 
+        }))
       }
     } catch (error) {
       console.error('Failed to send message:', error)
       
-      const errorMessage: Message = {
+      const errorMessage: DisplayMessage = {
         id: (Date.now() + 1).toString(),
         role: "assistant",
         content: "Sorry, I encountered an error while processing your message. Please try again.",
@@ -240,20 +325,16 @@ function MainContent({
         <div className="flex items-center justify-between p-3 md:p-4 border-b border-gray-800 bg-black">
           <div className="flex items-center gap-2">
             <SidebarTrigger className="text-gray-400 hover:text-white hover:bg-gray-800 p-2 rounded-md transition-colors" />
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={onNewChat}
-              className="text-gray-400 hover:text-white hover:bg-gray-800 sm:hidden flex items-center gap-2 px-3 py-2"
-            >
-              <Plus className="h-4 w-4" />
-              New chat
-            </Button>
-            {activeConversation && (
+            {activeDocument && (
               <div className="hidden sm:block text-gray-300 text-sm">
-                {activeConversation.title}
-                {activeConversation.documentTitle && (
-                  <span className="text-blue-400 ml-2">📄 {activeConversation.documentTitle}</span>
+                <div className="flex items-center gap-2">
+                  <FileText className="h-4 w-4 text-blue-400" />
+                  <span>{activeDocument.title || activeDocument.originalName}</span>
+                </div>
+                {activeDocument.conversation && (
+                  <span className="text-xs text-gray-500">
+                    {activeDocument.conversation.messageCount} messages
+                  </span>
                 )}
               </div>
             )}
@@ -271,21 +352,42 @@ function MainContent({
         {/* Chat Messages */}
         <ScrollArea className="flex-1 bg-black">
           <div className="max-w-4xl mx-auto p-3 md:p-6 space-y-4 md:space-y-6">
-            {isLoadingMessages ? (
+            {!activeDocument ? (
+              <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
+                <FileText className="h-16 w-16 text-gray-600" />
+                <div className="text-gray-400 text-lg">No document selected</div>
+                <div className="text-gray-500 text-sm">
+                  Upload a document or select one from the sidebar to start chatting
+                </div>
+              </div>
+            ) : isLoadingMessages ? (
               <div className="flex justify-center items-center h-32">
                 <div className="text-gray-400">Loading messages...</div>
               </div>
             ) : messages.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-full text-center space-y-4">
                 <div className="text-gray-400 text-lg">
-                  {activeConversationId ? 'No messages in this conversation yet.' : 'Start a new conversation'}
+                  Ready to chat about {activeDocument.title || activeDocument.originalName}
                 </div>
-                <div className="text-gray-500 text-sm">
-                  {activeConversationId 
-                    ? 'Send a message to get started!' 
-                    : 'Ask me anything or upload a document to begin chatting!'
-                  }
+                <div className="text-gray-500 text-sm max-w-md">
+                  {activeDocument.summary && (
+                    <p className="mb-2">{activeDocument.summary}</p>
+                  )}
+                  Ask questions about this document to get started!
                 </div>
+                {activeDocument.keywords.length > 0 && (
+                  <div className="flex flex-wrap gap-2 justify-center">
+                    <span className="text-xs text-gray-500">Topics:</span>
+                    {activeDocument.keywords.map((keyword, index) => (
+                      <span 
+                        key={index}
+                        className="text-xs bg-gray-800 text-gray-300 px-2 py-1 rounded"
+                      >
+                        {keyword}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
             ) : (
               messages.map((message) => (
@@ -301,11 +403,17 @@ function MainContent({
                     </div>
                   )}
                   
+                  {message.role === "system" && (
+                    <div className="flex-shrink-0 w-8 h-8 bg-gray-600 rounded-full flex items-center justify-center">
+                      <Settings className="h-4 w-4 text-gray-300" />
+                    </div>
+                  )}
+                  
                   <div className={message.role === "user" ? "flex flex-col items-end" : "flex-1"}>
                     <ChatMessage
                       {...message}
                       showTimeStamp={true}
-                      animation="slide"
+                      animation="fade"
                     />
                   </div>
 
@@ -323,15 +431,7 @@ function MainContent({
                 <div className="flex-shrink-0 w-8 h-8 bg-gray-800 rounded-full flex items-center justify-center">
                   <Bot className="h-4 w-4 text-gray-300" />
                 </div>
-                <div className="flex-1">
-                  <div className="bg-muted text-foreground rounded-lg p-3 text-sm">
-                    <div className="flex items-center gap-2">
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce"></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.1s" }}></div>
-                      <div className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: "0.2s" }}></div>
-                    </div>
-                  </div>
-                </div>
+                <TypingIndicator />
               </div>
             )}
           </div>
@@ -344,15 +444,14 @@ function MainContent({
               <MessageInput
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
-                placeholder={activeConversation?.documentTitle 
-                  ? `Ask about ${activeConversation.documentTitle}...` 
-                  : "Ask anything..."}
-                allowAttachments={true}
-                files={files}
-                setFiles={setFiles}
+                placeholder={activeDocument 
+                  ? `Ask about ${activeDocument.title || activeDocument.originalName}...` 
+                  : "Select a document to start chatting..."}
+                allowAttachments={false}
                 isGenerating={isGenerating}
                 stop={stopGeneration}
                 enableInterrupt={true}
+                disabled={!activeDocument}
                 className="bg-gray-900 border-gray-700 text-white placeholder-gray-400 focus:ring-gray-500 focus:border-gray-500"
               />
             </form>
@@ -364,48 +463,101 @@ function MainContent({
 }
 
 export default function ChatInterface() {
-  const [conversations, setConversations] = useState<Conversation[]>([])
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [documents, setDocuments] = useState<Document[]>([])
+  const [activeDocument, setActiveDocument] = useState<Document | null>(null)
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(true)
 
   useEffect(() => {
-    loadConversations()
+    loadDocuments()
+    
+    const handleConversationCreated = (event: CustomEvent) => {
+      setActiveConversationId(event.detail.conversationId)
+      loadDocuments()
+    }
+    
+    window.addEventListener('conversationCreated', handleConversationCreated as EventListener)
+    return () => {
+      window.removeEventListener('conversationCreated', handleConversationCreated as EventListener)
+    }
   }, [])
 
-  const loadConversations = async () => {
-    try {
-      const conversations = await apiService.getAllConversations()
-      setConversations(conversations)
+  useEffect(() => {
+    const conversationId = searchParams.get('conversationId')
+    if (conversationId && conversationId !== activeConversationId) {
+      setActiveConversationId(conversationId)
       
-      // Set the first conversation as active if none is selected
-      if (conversations.length > 0 && !activeConversationId) {
-        setActiveConversationId(conversations[0].id)
+      const document = documents.find(doc => doc.conversation?.id === conversationId)
+      if (document) {
+        setActiveDocument(document)
+      }
+    }
+  }, [searchParams, documents, activeConversationId])
+
+  const loadDocuments = async () => {
+    try {
+      const response = await apiService.getAllDocuments({ 
+        sortBy: 'createdAt', 
+        sortOrder: 'DESC' 
+      })
+      setDocuments(response.documents)
+      
+      const conversationId = searchParams.get('conversationId')
+      if (conversationId) {
+        const document = response.documents.find(doc => doc.conversation?.id === conversationId)
+        if (document) {
+          setActiveDocument(document)
+          setActiveConversationId(conversationId)
+        }
+      } else if (!activeDocument && response.documents.length > 0) {
+        const firstDocWithConversation = response.documents.find(doc => doc.conversation)
+        if (firstDocWithConversation) {
+          setActiveDocument(firstDocWithConversation)
+          setActiveConversationId(firstDocWithConversation.conversation!.id)
+        }
       }
     } catch (error) {
-      console.error('Failed to load conversations:', error)
+      console.error('Failed to load documents:', error)
     } finally {
       setIsLoading(false)
     }
   }
 
-  const handleNewChat = () => {
-    setActiveConversationId(null)
+  const handleDocumentClick = (document: Document) => {
+    setActiveDocument(document)
+    
+    if (document.conversation) {
+      setActiveConversationId(document.conversation.id)
+      
+      router.push(`?conversationId=${document.conversation.id}`, { scroll: false })
+    } else {
+      setActiveConversationId(null)
+      
+      router.push('/', { scroll: false })
+    }
   }
+
 
   const handleUploadDocument = async (file: File) => {
     try {
       setIsLoading(true)
-      await apiService.uploadDocument(file)
+      const response = await apiService.uploadDocument(file)
       
-      // Create a new conversation for this document
-      const conversation = await apiService.createConversation(
-        `Chat about ${file.name}`,
-        undefined // documentId would be returned from upload
-      )
+      await loadDocuments()
       
-      // Reload conversations and set the new one as active
-      await loadConversations()
-      setActiveConversationId(conversation.id)
+      const newDocument = documents.find(doc => doc.id === response.documentId)
+      if (newDocument) {
+        setActiveDocument(newDocument)
+        
+        if (response.conversationId) {
+          setActiveConversationId(response.conversationId)
+          router.push(`?conversationId=${response.conversationId}`, { scroll: false })
+        }
+      }
+      
+      alert(`Document "${file.name}" uploaded successfully!`)
     } catch (error) {
       console.error('Failed to upload document:', error)
       alert('Failed to upload document. Please try again.')
@@ -416,19 +568,17 @@ export default function ChatInterface() {
 
   return (
     <SidebarProvider defaultOpen={true}>
-      <div className="flex h-screen w-full bg-black overflow-hidden">
-        <ChatSidebar 
-          conversations={conversations}
+      <div className="flex h-screen w-full overflow-hidden">
+        <DocumentSidebar 
+          documents={documents}
           activeConversationId={activeConversationId}
-          setActiveConversationId={setActiveConversationId}
-          onNewChat={handleNewChat}
+          onDocumentClick={handleDocumentClick}
           onUploadDocument={handleUploadDocument}
           isLoading={isLoading}
         />
         <MainContent 
+          activeDocument={activeDocument}
           activeConversationId={activeConversationId}
-          conversations={conversations}
-          onNewChat={handleNewChat}
         />
       </div>
     </SidebarProvider>
